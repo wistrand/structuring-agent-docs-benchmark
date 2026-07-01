@@ -6,6 +6,36 @@ provider on the day. Treat runs as immutable; on a rerun, append a new dated sec
 rather than overwriting an old one. Durable takeaways are separated from the numbers,
 because the takeaways outlast any single model lineup.
 
+## Summary
+
+Consuming side (placement benchmark), robust:
+
+- Blast radius holds. A fact factored out of the always-loaded CLAUDE.md is missed unless
+  the harness urges reading, so keep critical, default-overriding facts inline. Even a
+  frontier model misses factored-out facts under a non-urging prompt; weak models never
+  follow links at all.
+- The `@`-import warning holds. An `@`-import costs the same context as inline and saves
+  nothing, confirmed by the benchmark and by the harness spec (imports load eagerly).
+- Follow-through is governed by the harness's system prompt, not the doc's labels or a
+  per-link hint. Mainstream harnesses urge reading, so link-following is usually fine for
+  capable models; the real risk is weak models and low-cue, default-overriding facts.
+
+Authoring side (authoring2), real but narrower:
+
+- The skill's drift-resistance discipline (don't copy volatile values; point into source;
+  generate) measurably improves a capable author's docs (sonnet: robust 100% vs baseline
+  fragile 100%) and shows no effect for a mid author (haiku: both mostly hard-copy). The
+  benefit is capability-gated. The meaning axis had a clean control but did not
+  discriminate (a handed-over why is documented by both arms).
+- The earlier `authoring.js` downstream metric was confounded (a source-derivable fact
+  with the source removed); `authoring2.js` is the corrected design.
+
+No result argued for changing the skill; several validate its claims. Recurring caveat:
+n=2 produced spurious "clean wins" twice that higher n reversed, so trust n>=10 and treat
+small runs as noise. All runs are one provider, one day, a few models, one repo, one-shot
+(so no long-horizon drift). The dated sections below are the chronological record and the
+evidence behind this summary.
+
 ## Run: 2026-07-01 (OpenRouter)
 
 Cases: `centiseconds`, `id-prefix` (both arbitrary, surprising facts whose natural
@@ -169,3 +199,218 @@ Sources: [Claude Code memory docs](https://code.claude.com/docs/en/memory),
   docs (eager-like) or not; where it does, follow-through rises, but that is the
   harness's doing, not the doc author's. The lever the author controls is what stays
   inline.
+
+## Authoring run: 2026-07-01 (OpenRouter)
+
+Tests the authoring side: does an agent given the skill produce better-structured docs
+than one without it? A synthetic repo (`authoring-cases.js`) with facts planted in
+source; two arms (skill = given `SKILL.md` + `references/`; baseline = generic "write
+agent docs"); graded on capture (did the produced docs surface each planted fact) and
+downstream honor (a consuming agent given only the produced docs honors the buried
+invariant, via `--consume-model`/`--consume-system`).
+
+### The fixture had to be hardened
+
+v1 put the facts in obvious source comments. A capable author (haiku-4.5) captured all
+four and honored downstream 100% in both arms: no discrimination, because a plain "write
+docs" pass already surfaces flagged comments. v2 buries the invariant behind a `TICK_HZ`
+constant and a division (no "centiseconds" comment), strips the giveaway comments on the
+id rule and the warmup hazard (leaving only a runtime warn string), and adds distractor
+files. v2 discriminates: capture rates now spread across 0-100% instead of a uniform
+100%.
+
+### Weak-author results are inconclusive
+
+Two runs, weak authors (gpt-4o-mini, llama-3.1-8b), n=3 per cell.
+
+- Capture did not replicate. Run 1 (author consumed its own docs) had skill above
+  baseline on the buried invariant (gpt 33% vs 0%, llama 67% vs 0%). Run 2 (docs
+  consumed by a strong model) flattened or reversed it (gpt skill 0% vs baseline 33%,
+  llama 33% vs 33%). At n=3 a rate is 0/1/2/3 of three, so these swings are noise; no
+  reliable skill capture advantage was established, and the run-1 numbers should not be
+  read as one.
+- Downstream floored at 0% in both runs, even when a strong model (sonnet-4.6) read the
+  produced docs. In the cells where the unit was "captured," the doc still gave no usable
+  conversion: the strong consumer answered `scheduleRetry(3000)` (the ms default) anyway.
+  A mention of ticks/`TICK_HZ` is not the same as an inline, actionable "3 seconds = 300".
+
+### Reading it
+
+- The fixture is now sound (it discriminates), but this run shows no skill authoring
+  advantage, and it would be wrong to claim one from the noisy run-1 numbers.
+- Two likely reasons, both about the experiment, not the skill: n=3 is far too small, and
+  a weak model may not reliably execute the skill's instructions (following a skill is
+  itself a capability), so skill-vs-baseline is muddy for weak authors, echoing weak
+  models ignoring links in the placement benchmark.
+- Capturing a fact's existence is not the same as making it actionable and well placed;
+  weak authors surfaced the unit occasionally but never in a form a downstream agent
+  could apply.
+
+### Next
+
+To actually test the authoring claim, run capable authors (haiku-4.5, sonnet-4.6) on the
+hardened fixture at higher n (10-20), with a strong decoupled consumer, and judge on
+downstream honor, not just capture. Weak authors are probably the wrong subject: a model
+that cannot follow the skill cannot show its benefit.
+
+### Capable-author results (n=10, strong consumer sonnet-4.6, neutral)
+
+Authors haiku-4.5 and sonnet-4.6; consumer sonnet-4.6; consume-system neutral.
+
+- Capture saturated: both arms captured all four facts at ~100% for both authors. Capable
+  models document the buried facts with or without the skill, so capture no longer
+  discriminates (the fixture would need still-harder-to-find facts).
+- Downstream under neutral: no help, and for sonnet the skill hurt.
+  - haiku authored: skill 40%, baseline 40% (tie).
+  - sonnet authored: **skill 0%, baseline 70%.**
+- Mechanism (from the raw): sonnet-skill captured the invariant 100% but honored 0%.
+  capture-100% with downstream-0% means the fact was written down but not in the
+  always-loaded CLAUDE.md, so the neutral consumer, which does not open links, never saw
+  it. The skill's factoring discipline (lean CLAUDE.md, detail into agent_docs) moved a
+  default-overriding invariant off the always-loaded surface. Baseline dumped everything
+  inline, so the consumer read the conversion and answered 300.
+
+Reading it:
+
+- This is the skill's own blast-radius silent miss, triggered by its own factoring
+  guidance: a capable author factored a must-inline invariant into a deep dive, and a
+  non-eager reader missed it. The skill's "flag critical invariants inline" rule was
+  outweighed by its louder "keep CLAUDE.md lean, factor into agent_docs" pull.
+- It is under the pessimistic (neutral) consumer, so we ran eager next to check whether
+  it was just a placement artifact. It was not only that, but it was still an artifact:
+  see the eager run below.
+
+### Eager run (n=10): the gap did not close, and that exposed a benchmark flaw
+
+Same capable authors and strong consumer, `--consume-system eager`.
+
+- haiku authored: skill 20%, baseline 40%.
+- sonnet authored: skill 10%, baseline 90%.
+
+Eager did not rescue the skill arm, so the neutral result was not merely a non-eager
+placement artifact. But the notes reveal the real cause, and it is the benchmark, not the
+docs. Skill-arm consumers mostly answered `no scheduleRetry(N)` (declined) or 3000 (the
+ms default); baseline-arm consumers answered 300.
+
+The downstream consumer sees the produced docs but NOT the repo source. The skill teaches
+point-into-source and don't-copy-specific-values, so a skill-authored doc correctly says
+"delays are in ticks; TICK_HZ is in scheduler.js" instead of hand-copying the number.
+With the source removed, that pointer dangles: the consumer cannot resolve TICK_HZ=100,
+so it declines to guess (the "no scheduleRetry" answers are the agent behaving well) or
+falls back to the default. Baseline hand-copied "TICK_HZ=100, 3s=300" into the doc, the
+drift-prone move the skill warns against, and so was self-contained without the source.
+
+So the metric is confounded, and structurally so:
+
+- The tested fact (centiseconds = delay / TICK_HZ) is derivable from source.
+- Removing the source rewards copying the value and punishes pointing at it, inverting
+  the skill's own guidance.
+- Including the source would let the consumer derive 300 from code directly, making the
+  docs redundant and washing out any difference.
+
+A source-derivable fact therefore cannot fairly measure doc quality either way. The
+"skill worse" numbers are an artifact of this setup, not evidence the skill produces
+worse docs; the earlier provisional mark against the skill is withdrawn. If anything the
+refusals show the skill's point-into-source working as designed, with the source it
+points at deleted.
+
+### What a fair authoring-downstream test needs
+
+Test a fact that is NOT in the source (a why, a rejected approach, an external platform
+trap) and is given to the author rather than discovered, so the doc is the only place it
+can live; and give the consuming agent the repo source, as a real agent has. Then
+downstream honor measures what the skill is actually for: carrying the residue code
+cannot, and placing it where a later agent finds it. Since capture is saturated for
+capable authors, downstream is the only discriminator, and it must be built on a
+not-in-source fact to be valid. That is a redesign, not a parameter change.
+
+Bottom line for the authoring side: capture does not discriminate for capable authors,
+and the downstream metric as built is invalid for source-derivable facts. This benchmark
+has produced no valid evidence for or against the skill's authoring value.
+
+Caveats: weak run n=3, capable runs n=10; two to four models; one provider, one day, one
+repo; one-shot, so no drift; the downstream metric is invalid for source-derivable facts
+(see above).
+
+## Authoring v2 run: 2026-07-01 (OpenRouter)
+
+`authoring2.js` split the measurement into a mechanical structural axis (point-to-source
+vs copy-the-literal) and a behavioral meaning axis (a why not in code, consumer given the
+source, plus a source-only control). First run (haiku-4.5, sonnet-4.6 authors; sonnet-4.6
+consumer; n=2) did not discriminate, and exposed two metric flaws rather than a result:
+
+- Structural: copied 100% for both arms. But the classifier flags any literal as fragile,
+  so it cannot tell a generated settings doc that lists the values (the skill's endorsed,
+  drift-safe approach) from values hand-copied into prose (fragile). The number is
+  uninterpretable, and the harness does not save the produced docs to disambiguate.
+- Meaning: the control (source only, no docs) was not 0 (sonnet 50%), because the chosen
+  why, warmup then black frames, is guessable from domain priors. Honor is contaminated by
+  the consumer's own knowledge. And the why was handed to both arms, so both documented it
+  (no capture gap).
+
+Deeper tension: capable authors capture facts with or without the skill, given or
+discoverable, so neither capture nor meaning discriminates for them. The only axis that
+could is structural drift-resistance (generate/point vs hand-copy), which is exactly the
+axis the classifier gets wrong.
+
+To fix and retry: (1) credit a literal that sits in a GENERATED-marked doc or alongside a
+source pointer as robust, count only bare hand-prose literals as fragile, and save the
+produced docs to verify; (2) use an arbitrary, unguessable why so the control floors at 0.
+Absent those fixes, the authoring side remains unmeasured: the plausible honest conclusion
+is that the skill has no capture/meaning advantage for capable authors, and any authoring
+value is structural, pending a correct structural classifier.
+
+Update: those fixes are now in `authoring2.js` / `authoring2-cases.js`, verified offline
+but not yet run for real. The classifier credits a literal that sits in a GENERATED-marked
+doc or alongside a source pointer as robust and counts only bare hand-prose literals as
+fragile; the meaning why is now arbitrary ("grayscale") so the control floors at 0; and
+produced docs are saved via `--out` for inspection. The offline check discriminates as
+designed (skill robust, baseline fragile; control 0).
+
+### Corrected run (n=2, capable authors, sonnet consumer, eager): a structural win
+
+With the fixed classifier and the arbitrary why, the corrected benchmark produced the
+first valid authoring signal, and it favors the skill:
+
+- Structural: skill robust 100%, baseline fragile 100%, for both `ttlSec` and
+  `maxWidgets`, across both haiku-4.5 and sonnet-4.6 authors. Skill-guided authors point
+  at the schema or list the values in a GENERATED-marked doc (drift-safe); baseline
+  authors hard-copy the literals into prose (will drift). 4/4 vs 0/4 across two models is
+  an unambiguous direction even at n=2.
+- Meaning: control 0% for both models (the arbitrary "grayscale" why is unguessable, so
+  the metric is now clean); skill 100% both; baseline 100% (haiku) / 50% (sonnet). Skill
+  is at least as good, but since the why was handed to both arms both document it, so this
+  axis mostly confirms the honor is doc-driven rather than showing a strong skill edge.
+
+Reading it: the skill's authoring value is real and measurable on the drift-resistance
+axis, its actual thesis (don't copy volatile values; point into source; generate). It
+validates those rules; it does not call for changing the skill. The consuming-side value
+was already shown by the placement benchmark; this closes the authoring side.
+
+Caveat: n=2, and it turned out to matter. The n=10 run below shows the haiku 100% was
+noise (true ~20%); the clean structural win holds only for sonnet.
+
+### Corrected run (n=10): the structural win is sonnet-only
+
+At n=10 the picture sharpens and partly reverses the n=2 read:
+
+- sonnet authored: skill robust 100%, baseline fragile 100% (both facts). Clean, strong
+  win: a capable author given the skill reliably points at the schema or generates the
+  values instead of hard-coding them.
+- haiku authored: skill robust ~20%, baseline robust ~10-40% (both mostly fragile). No
+  skill advantage; on `ttlSec` baseline was even more robust than skill (40% vs 20%). The
+  skill did not move a mid-tier author away from hard-copying values.
+- Meaning: control 0% both (the arbitrary why works); skill 100% and baseline 100% both,
+  so no discrimination (the why was handed to both arms).
+
+So the skill's authoring benefit on the drift axis is real but model-dependent: a strong
+author (sonnet) follows the don't-copy / point / generate discipline; a mid author
+(haiku) hard-copies values regardless of being given the skill. The n=2 haiku 100% was
+noise. This echoes the placement finding that instruction-following is not uniform across
+capability: "don't copy specific values" has limited traction below the top tier.
+
+Net authoring conclusion: the skill measurably improves drift-resistant structure for a
+capable author and shows no measurable effect for a mid author on this fixture. It
+validates the rules where they are followed and does not argue for changing the skill,
+though the weak traction on mid models is consistent with the placement-side salience
+caveat.

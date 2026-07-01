@@ -115,5 +115,78 @@ whether the model followed the links.
 - It does not test long-horizon drift or maintainability, which are the skill's other
   claims and cannot be observed in a single run.
 
-Recorded results live in [findings.md](findings.md); add a new dated section there on
-each meaningful run rather than overwriting the last.
+What the runs showed (consuming side): blast radius holds (a factored-out fact is missed
+unless the harness urges reading, so keep critical facts inline), the `@`-import warning
+holds (same context cost as inline, no savings), and follow-through is driven by the
+harness system prompt rather than the doc's labels or a per-link hint. Full detail and the
+authoring-side results are in [findings.md](findings.md), which opens with a summary. Add
+a new dated section there on each meaningful run rather than overwriting the last.
+
+## Authoring benchmark (`authoring.js`)
+
+The placement benchmark tests the *consuming* side (agents working against a fixed doc
+layout). `authoring.js` tests the *authoring* side: does an agent given the skill
+produce better-structured docs than one without it?
+
+Each run authors a doc set for a synthetic repo (`authoring-cases.js`) whose source has
+facts planted in it (a default-overriding invariant, a naming rule, a why-behind-a-hack,
+a generate-from-source candidate), in two arms: `skill` (the model is given `SKILL.md`
+plus `references/`) and `baseline` (a generic "write agent docs" instruction). It grades
+two ways:
+
+- **capture**: did the produced docs surface each planted fact?
+- **downstream**: given only the produced docs, does a consuming agent honor the
+  default-overriding invariant? This reuses the placement harness's agent loop. It runs
+  under `--consume-system neutral` by default, which rewards good placement (a critical
+  fact kept inline in CLAUDE.md is honored; one buried or omitted is missed); pass
+  `--consume-system eager` for the lenient, more realistic case.
+
+Run:
+
+    node authoring.js --dry-run                    # inspect both arms' prompts, no calls
+    OPENROUTER_API_KEY=... node authoring.js --models anthropic/claude-haiku-4.5 --repeats 5
+
+Caveats beyond the placement benchmark's: the produced artifact varies freely, so it is
+noisier (use more repeats); the consuming agent sees only the produced docs, not the
+source, to isolate doc quality; and, being one-shot, it cannot measure drift or
+long-horizon maintainability. Do not grade by conformance to the skill's own rules
+alone: that is near-tautological. Capture and downstream honor are the outcome measures.
+
+`authoring.js`'s downstream metric turned out to be confounded: the tested fact was
+derivable from source, and removing the source penalized the skill's point-into-source
+docs while rewarding value-copying (see findings.md). `authoring2.js` is the corrected
+design; prefer it. `authoring.js` is kept as the record of the flawed approach.
+
+## Improved authoring benchmark (`authoring2.js`)
+
+Fixes the confound by separating the two things a good doc does for a value-bearing fact
+and measuring each fairly:
+
+- **structural (mechanical):** for volatile settings values, does the doc point at the
+  schema (ideal) or hard-code the literal (fragile)? Classified robust / fragile /
+  omitted per doc, no LLM call (a literal in a GENERATED-marked doc counts as robust). This is the drift-resistance the skill's
+  don't-copy-values / point-into-source rules are for.
+- **meaning (behavioral):** a why that is not in the code, given to the author. The
+  consuming agent is given the SOURCE (so pointers resolve and values are available) and
+  a task whose safe answer needs the why. Only a doc that carried the meaning changes the
+  outcome. A source-only control measures how often the model gets it right from caution
+  alone; the doc's contribution is the honor above control.
+
+Run:
+
+    node authoring2.js --dry-run
+    OPENROUTER_API_KEY=... node authoring2.js \
+      --models anthropic/claude-haiku-4.5,anthropic/claude-sonnet-4.6 \
+      --consume-model anthropic/claude-sonnet-4.6 --repeats 10
+
+Read it as: skill vs baseline on `robust%` (higher is better, points-or-generates) and
+`fragile%` (lower is better, hand-copied literal), and on `meaning honor%` relative to the `control` baseline.
+Still one repo, few models, one-shot; the meaning grader is behavioral so it is fuzzier
+than the placement benchmark's exact check.
+
+What it showed (n=10): the structural benefit is capability-gated. A clean win for a
+strong author (sonnet: robust 100% vs baseline fragile 100%) and no effect for a mid
+author (haiku: both mostly hard-copy the values). The meaning axis had a clean control
+(0%) but did not discriminate, since a handed-over why is documented by both arms. So
+running it on a mid model alone will show little; use a strong author and n>=10. Detail
+in [findings.md](findings.md).

@@ -11,6 +11,10 @@
   "scripts": {
     "dry": "node run.js --dry-run",
     "bench": "node run.js",
-    "help": "node run.js --help"
+    "help": "node run.js --help",
+    "author": "node authoring.js",
+    "author:dry": "node authoring.js --dry-run",
+    "author2": "node authoring2.js",
+    "author2:dry": "node authoring2.js --dry-run"
   }
 }
