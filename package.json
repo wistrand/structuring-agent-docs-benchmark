@@ -1,0 +1,16 @@
+{
+  "name": "structuring-agent-docs-benchmark",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Placement micro-benchmark for the structuring-agent-docs skill.",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dry": "node run.js --dry-run",
+    "bench": "node run.js",
+    "help": "node run.js --help"
+  }
+}
