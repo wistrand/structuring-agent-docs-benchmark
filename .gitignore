@@ -1,0 +1,19 @@
+# Dependencies (repo is dependency-free; guard against accidental installs)
+node_modules/
+package-lock.json
+
+# Benchmark output (--out); findings.md is the tracked, curated record
+results.json
+results*.json
+*.out.json
+
+# Local env / secrets (OPENROUTER_API_KEY)
+.env
+.env.*
+
+# Editor / OS
+.DS_Store
+*.swp
+
+# Claude Code session state
+.claude/
