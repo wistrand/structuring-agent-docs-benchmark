@@ -14,12 +14,26 @@ const { chat, fetchModelIds } = require('./openrouter');
 const { runAgent, systemFor } = require('./agent');
 const { repo, planted, downstream } = require('./authoring-cases');
 
-const SKILL_DIR = path.join(__dirname, '..');
 const ARMS = ['skill', 'baseline'];
 
-function readSkill() {
-  let text = fs.readFileSync(path.join(SKILL_DIR, 'SKILL.md'), 'utf8');
-  const refDir = path.join(SKILL_DIR, 'references');
+// The authoring arm feeds the skill to the model, so the benchmark needs a skill
+// checkout. This works whether the benchmark lives inside the skill repo or as its own
+// sibling repo. Override with --skill-dir or SKILL_DIR; never vendor a copy (it drifts).
+function resolveSkillDir(explicit) {
+  const candidates = [
+    explicit,
+    process.env.SKILL_DIR,
+    path.join(__dirname, '..'), // in-repo, before the benchmark is split out
+    path.join(__dirname, '..', 'structuring-agent-docs'), // sibling checkout
+    path.join(__dirname, '..', '..', 'structuring-agent-docs'),
+  ].filter(Boolean);
+  for (const c of candidates) if (fs.existsSync(path.join(c, 'SKILL.md'))) return c;
+  throw new Error('skill not found. Pass --skill-dir <path to a structuring-agent-docs checkout> or set SKILL_DIR.');
+}
+
+function readSkill(skillDir) {
+  let text = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+  const refDir = path.join(skillDir, 'references');
   for (const f of fs.readdirSync(refDir).sort()) {
     if (f.endsWith('.md')) {
       text += `\n\n----- references/${f} -----\n\n` + fs.readFileSync(path.join(refDir, f), 'utf8');
@@ -111,6 +125,7 @@ function parseArgs(argv) {
     consumeSystem: 'neutral',
     consumeModel: null,
     out: null,
+    skillDir: null,
     verbose: false,
     dryRun: false,
     help: false,
@@ -122,6 +137,7 @@ function parseArgs(argv) {
     else if (x === '--temperature') a.temperature = Number(argv[++i]);
     else if (x === '--concurrency') a.concurrency = Number(argv[++i]);
     else if (x === '--consume-system') a.consumeSystem = String(argv[++i] || '').trim();
+    else if (x === '--skill-dir') a.skillDir = String(argv[++i] || '').trim();
     else if (x === '--consume-model') a.consumeModel = String(argv[++i] || '').trim();
     else if (x === '--out') a.out = argv[++i];
     else if (x === '--verbose' || x === '-v') a.verbose = true;
@@ -153,6 +169,7 @@ Flags:
   --consume-model M  model that reads the produced docs downstream (default: the author
                   model). Set a strong model to test doc usability independent of a weak
                   author's own consuming ability
+  --skill-dir PATH path to a structuring-agent-docs checkout (default: sibling or in-repo)
   --out PATH      write raw per-run results as JSON
   --verbose, -v   (unused placeholder; per-run lines always print)
   --dry-run       build and print the authoring prompts; make no network calls
@@ -184,7 +201,13 @@ async function main() {
     process.exit(1);
   }
 
-  const skillText = readSkill();
+  let skillText;
+  try {
+    skillText = readSkill(resolveSkillDir(args.skillDir));
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
 
   if (args.dryRun) {
     for (const arm of ARMS) {

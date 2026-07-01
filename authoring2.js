@@ -16,12 +16,26 @@ const { chat, fetchModelIds } = require('./openrouter');
 const { runAgent, systemFor } = require('./agent');
 const { repo, authorNote, structural, classify, meaning } = require('./authoring2-cases');
 
-const SKILL_DIR = path.join(__dirname, '..');
 const ARMS = ['skill', 'baseline'];
 
-function readSkill() {
-  let text = fs.readFileSync(path.join(SKILL_DIR, 'SKILL.md'), 'utf8');
-  const refDir = path.join(SKILL_DIR, 'references');
+// The authoring arm feeds the skill to the model, so the benchmark needs a skill
+// checkout. Works whether the benchmark lives inside the skill repo or as its own
+// sibling repo. Override with --skill-dir or SKILL_DIR; never vendor a copy (it drifts).
+function resolveSkillDir(explicit) {
+  const candidates = [
+    explicit,
+    process.env.SKILL_DIR,
+    path.join(__dirname, '..'), // in-repo, before the benchmark is split out
+    path.join(__dirname, '..', 'structuring-agent-docs'), // sibling checkout
+    path.join(__dirname, '..', '..', 'structuring-agent-docs'),
+  ].filter(Boolean);
+  for (const c of candidates) if (fs.existsSync(path.join(c, 'SKILL.md'))) return c;
+  throw new Error('skill not found. Pass --skill-dir <path to a structuring-agent-docs checkout> or set SKILL_DIR.');
+}
+
+function readSkill(skillDir) {
+  let text = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+  const refDir = path.join(skillDir, 'references');
   for (const f of fs.readdirSync(refDir).sort()) {
     if (f.endsWith('.md')) text += `\n\n----- references/${f} -----\n\n` + fs.readFileSync(path.join(refDir, f), 'utf8');
   }
@@ -107,7 +121,7 @@ async function controlUnit(consumeModel, consumeSystem, temperature) {
 function parseArgs(argv) {
   const a = {
     models: [], repeats: 5, temperature: 0.7, concurrency: 4,
-    consumeModel: null, consumeSystem: 'eager', out: null, dryRun: false, help: false,
+    consumeModel: null, consumeSystem: 'eager', skillDir: null, out: null, dryRun: false, help: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
@@ -117,6 +131,7 @@ function parseArgs(argv) {
     else if (x === '--concurrency') a.concurrency = Number(argv[++i]);
     else if (x === '--consume-model') a.consumeModel = String(argv[++i] || '').trim();
     else if (x === '--consume-system') a.consumeSystem = String(argv[++i] || '').trim();
+    else if (x === '--skill-dir') a.skillDir = String(argv[++i] || '').trim();
     else if (x === '--out') a.out = argv[++i];
     else if (x === '--dry-run') a.dryRun = true;
     else if (x === '--help' || x === '-h') a.help = true;
@@ -145,6 +160,7 @@ Flags:
   --concurrency    units in flight, default 4
   --consume-model  model that reads docs+source downstream (default: the author model)
   --consume-system eager (default) | neutral: the consuming agent's prompt
+  --skill-dir PATH path to a structuring-agent-docs checkout (default: sibling or in-repo)
   --out PATH       write raw per-run results as JSON
   --dry-run        print the authoring prompt, no API calls
 `);
@@ -163,7 +179,13 @@ async function main() {
   if (args.help) return help();
   if (!['eager', 'neutral'].includes(args.consumeSystem)) { console.error('--consume-system must be eager or neutral.'); process.exit(1); }
 
-  const skillText = readSkill();
+  let skillText;
+  try {
+    skillText = readSkill(resolveSkillDir(args.skillDir));
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
   if (args.dryRun) {
     const [sys, usr] = authoringMessages('skill', skillText);
     console.log('--- skill system (truncated) ---');
