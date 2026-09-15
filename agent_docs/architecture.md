@@ -77,8 +77,11 @@ Output survives a stop. `--out` streams each finished run, and each error, as a 
 line to a `.runs.jsonl` file beside it; the sorted JSON is written at the end. Each
 invalid run prints a `?` line with `status`, `finishReason`, `nativeFinishReason`,
 `turns`, and the reply head, and its record keeps a `detail`. `--max-invalid` sets
-`abortReason` once a model passes its share of invalid runs: workers stop taking tasks,
-in-flight runs finish, outputs are written, and the exit code is 3.
+`abortReason` once a model passes its share of invalid runs outside `absent`: workers
+stop taking tasks, in-flight runs finish, outputs are written, and the exit code is 3.
+`absent` is exempt (`LIMIT_EXEMPT`) because it grades 0% by design; gemini-3.8-flash
+answers it with whitespace after searching for the missing fact, which stopped two runs
+before the exemption.
 
 Reasoning settings are per model, identical across that model's placements, so the
 placement invariant (variants differ only in where the fact lives) is unaffected.

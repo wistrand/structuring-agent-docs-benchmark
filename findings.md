@@ -732,3 +732,112 @@ Reading it:
   of 10). Record refusals per arm; an arm dominated by refusals cannot be compared.
 - Caveats: one fixture repository, two structural facts, one consumer, n=10 per arm (n=2
   for opus-5 baseline), one-shot, and no long-horizon drift.
+
+## Run: 2026-09-15 placement refresh, remaining configurations (OpenRouter)
+
+Phase 1b of [plans/2026-09-15-model-refresh.md](plans/2026-09-15-model-refresh.md): the
+three July configurations phase 1 skipped, so all six prompt and label combinations have
+2026-09 numbers. Neutral prompt with descriptive labels (n:desc), eager prompt with
+per-link hints (e:hint), and neutral prompt with per-link hints (n:hint). Same cases and
+placements, `--repeats 10` (n=20 per cell), temperature 0.7, `--reasoning off`,
+`--max-tokens 8192`, `--max-invalid 2`. Nine models: the phase 1 lineup without
+`anthropic/claude-opus-5`, which was dropped from all runs after phase 3.
+
+Run conditions:
+
+- n:desc stopped at 880 of 900 runs when gemini-3.8-flash passed the invalid limit. The
+  20 missing runs are two `absent` cells (deepseek-v4-pro and ministral-8b, `id-prefix`),
+  which grade 0% by design, so every link and chain cell is complete.
+- Every invalid run across the six placement configurations and phase 2 was
+  gemini-3.8-flash in `absent`: after searching for the missing fact it replied with
+  whitespace, ended on an empty `tool_calls` finish, or ran out of budget. After n:desc,
+  `absent` was exempted from `--max-invalid` (see
+  [agent_docs/architecture.md](agent_docs/architecture.md)); e:hint and n:hint ran with
+  the exemption and completed.
+- 2700 planned runs, 2680 recorded, 6 invalid (all gemini `absent`), 11 gemini
+  provider errors recovered on retry, 0 usage gaps. Reported cost $2.64.
+
+### Anchors
+
+Across all six configurations, the 48 July anchor comparisons (four models, link and
+chain) had a median shift of 5 points. Two exceeded 15, both chain cells under
+e:hint, moving in opposite directions:
+
+| model                            | config | link July | link 2026-09 | chain July | chain 2026-09 |
+|----------------------------------|--------|-----------|--------------|------------|---------------|
+| anthropic/claude-sonnet-4.6      | n:desc | 0         | 0            | 5          | 0             |
+| anthropic/claude-sonnet-4.6      | e:hint | 100       | 85           | 75         | 50            |
+| anthropic/claude-sonnet-4.6      | n:hint | 0         | 0            | 10         | 0             |
+| anthropic/claude-haiku-4.5       | n:desc | 50        | 40           | 70         | 70            |
+| anthropic/claude-haiku-4.5       | e:hint | 85        | 95           | 100        | 95            |
+| anthropic/claude-haiku-4.5       | n:hint | 45        | 50           | 50         | 40            |
+| openai/gpt-4o-mini               | n:desc | 0         | 0            | 0          | 0             |
+| openai/gpt-4o-mini               | e:hint | 100       | 100          | 65         | 95            |
+| openai/gpt-4o-mini               | n:hint | 0         | 0            | 0          | 0             |
+| meta-llama/llama-3.1-8b-instruct | n:desc | 0         | 0            | 0          | 0             |
+| meta-llama/llama-3.1-8b-instruct | e:hint | 0         | 0            | 5          | 0             |
+| meta-llama/llama-3.1-8b-instruct | n:hint | 0         | 0            | 0          | 0             |
+
+- sonnet-4.6 e:hint chain fell from 75% to 50%. The whole drop is the low-cue
+  `centiseconds` case: 0 of 10 with no reads, against 10 of 10 on `id-prefix`. The same
+  split appeared under e:desc in phase 1.
+- gpt-4o-mini e:hint chain rose from 65% to 95%, opening about 3 files per run on
+  `centiseconds`.
+- Opposite directions, `inline`, `import`, and `absent` exactly as expected, and a
+  median shift of 5 points all point to sampling variation at n=20 rather than
+  a harness change.
+
+### Follow-through across all six configurations (n=20), honor%
+
+e:desc, e:blind, and n:blind come from the phase 1 run above; e:hint, n:desc, and n:hint
+come from this one.
+
+link:
+
+| model                            | e:desc | e:hint | e:blind | n:desc | n:hint | n:blind |
+|----------------------------------|--------|--------|---------|--------|--------|---------|
+| anthropic/claude-sonnet-4.6      | 75     | 85     | 75      | 0      | 0      | 15      |
+| anthropic/claude-haiku-4.5       | 80     | 95     | 95      | 40     | 50     | 55      |
+| openai/gpt-4o-mini               | 75     | 100    | 95      | 0      | 0      | 0       |
+| meta-llama/llama-3.1-8b-instruct | 15     | 0      | 0       | 0      | 0      | 0       |
+| anthropic/claude-sonnet-5        | 100    | 100    | 100     | 100    | 100    | 100     |
+| openai/gpt-5.6-terra             | 0      | 0      | 0       | 0      | 0      | 0       |
+| google/gemini-3.8-flash          | 100    | 100    | 100     | 90     | 80     | 80      |
+| deepseek/deepseek-v4-pro-0813    | 90     | 95     | 95      | 95     | 85     | 95      |
+| mistralai/ministral-8b-2512      | 0      | 0      | 0       | 0      | 0      | 0       |
+
+chain:
+
+| model                            | e:desc | e:hint | e:blind | n:desc | n:hint | n:blind |
+|----------------------------------|--------|--------|---------|--------|--------|---------|
+| anthropic/claude-sonnet-4.6      | 50     | 50     | 55      | 0      | 0      | 0       |
+| anthropic/claude-haiku-4.5       | 100    | 95     | 95      | 70     | 40     | 70      |
+| openai/gpt-4o-mini               | 55     | 95     | 55      | 0      | 0      | 0       |
+| meta-llama/llama-3.1-8b-instruct | 0      | 0      | 5       | 0      | 0      | 0       |
+| anthropic/claude-sonnet-5        | 100    | 100    | 100     | 100    | 100    | 100     |
+| openai/gpt-5.6-terra             | 0      | 0      | 0       | 0      | 0      | 0       |
+| google/gemini-3.8-flash          | 100    | 100    | 90      | 100    | 100    | 75      |
+| deepseek/deepseek-v4-pro-0813    | 80     | 95     | 80      | 85     | 90     | 75      |
+| mistralai/ministral-8b-2512      | 0      | 5      | 0       | 0      | 0      | 0       |
+
+Reading it:
+
+- A per-link hint does not rescue follow-through under a neutral prompt. sonnet-4.6 and
+  gpt-4o-mini honored 0% on link and chain in n:hint, as in n:desc, and 0-15% in
+  n:blind, matching July.
+- Under the eager prompt the hint changed little for most models. The exception is
+  gpt-4o-mini chain: 95% with hints against 55% with descriptive or blind labels. Given
+  the anchor shift above, treat that one cell with caution.
+- The model split from phase 1 holds in every configuration. sonnet-5 honored 100% on
+  link and chain in all six. deepseek-v4-pro stayed at 75-95% and gemini-3.8-flash at
+  75-100%. gpt-5.6-terra was 0% in all six, and ministral-8b and llama-3.1-8b 0-15%.
+- The token side holds: in all three configurations, `import` first-load tokens exceeded
+  `inline`, and `link` and `chain` stayed below it, for every model.
+
+### Takeaways
+
+- Labels and per-link hints remain a minor lever next to the system prompt, and above
+  all next to the model. With all six configurations measured, keeping critical facts
+  inline is still the only placement that works for every model.
+- Caveats: one provider, one day, two cases, n=20 per cell, reasoning off, and no
+  opus-5 in these three configurations.

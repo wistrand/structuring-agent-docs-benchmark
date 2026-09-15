@@ -76,8 +76,10 @@ Flags:
   --max-tokens N completion budget per turn, default 8192. Hidden reasoning counts
                  against it; a run left with no answer is reported invalid, not missed
   --max-invalid PCT  stop cleanly once any model's invalid runs exceed PCT% of its
-                 planned runs: no new runs start, in-flight runs finish, outputs are
-                 written, exit code 3. Default: never stop
+                 planned runs outside the absent placement (absent grades 0% by
+                 design, so its invalid runs never count): no new runs start,
+                 in-flight runs finish, outputs are written, exit code 3. Default:
+                 never stop
   --verbose, -v  print per-run detail (reads, tokens, timing, grade) as it runs
   --dry-run      build and print the variants; make no network calls
 `);
@@ -280,10 +282,16 @@ async function main() {
 
   // --max-invalid: stop cleanly once a model's invalid runs exceed that share of its
   // planned runs. Workers stop taking tasks; in-flight runs finish; outputs are written.
-  const plannedPerModel = selected.length * PLACEMENT_ORDER.length * args.repeats;
+  // `absent` is exempt: it grades 0% by design, so an invalid run there cannot change a
+  // result (gemini-3.8-flash replies with whitespace there after searching for the
+  // missing fact). Those runs are still printed, counted, and excluded from honor%.
+  const LIMIT_EXEMPT = new Set(['absent']);
+  const limitPlacements = PLACEMENT_ORDER.filter((p) => !LIMIT_EXEMPT.has(p)).length;
+  const plannedPerModel = selected.length * limitPlacements * args.repeats;
   const invalidByModel = new Map();
   let abortReason = null;
-  function checkInvalidLimit(model) {
+  function checkInvalidLimit(model, placement) {
+    if (LIMIT_EXEMPT.has(placement)) return;
     const n = (invalidByModel.get(model) || 0) + 1;
     invalidByModel.set(model, n);
     if (args.maxInvalid === null || abortReason) return;
@@ -291,7 +299,7 @@ async function main() {
     if (n > allowed) {
       abortReason =
         `${model} has ${n} invalid run(s), over --max-invalid ${args.maxInvalid}% ` +
-        `of ${plannedPerModel} planned (${allowed} allowed)`;
+        `of ${plannedPerModel} planned runs outside absent (${allowed} allowed)`;
       console.log(`STOPPING: ${abortReason}. Finishing in-flight runs, then writing results.`);
     }
   }
@@ -395,7 +403,7 @@ async function main() {
             `turns ${outcome.turns}, reads ${outcome.reads.length}` +
             (why ? `, reply "${why.replace(/\s+/g, ' ').slice(0, 160)}"` : ', empty reply')
         );
-        checkInvalidLimit(t.model);
+        checkInvalidLimit(t.model, t.name);
       }
       if (args.verbose) {
         const label = invalid ? outcome.status.toUpperCase().padEnd(7) : graded.honored ? 'honored' : 'MISSED ';

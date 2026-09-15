@@ -129,8 +129,9 @@ would otherwise grade as a miss and pass for a placement effect.
   nonzero `invalid` count means raise `--max-tokens` or lower `--reasoning` and rerun
   that model. Each invalid run prints a `?` line with its status, finish reasons, turn
   count, and the head of the reply. `--max-invalid PCT` stops the run cleanly once any
-  model's invalid runs exceed PCT% of its planned runs: no new runs start, in-flight
-  runs finish, outputs are written, and the exit code is 3.
+  model's invalid runs exceed PCT% of its planned runs outside `absent`: no new runs
+  start, in-flight runs finish, outputs are written, and the exit code is 3. `absent`
+  grades 0% by design, so invalid runs there are reported but never trip the limit.
 - A completion whose finish reason is `error` (a provider failure mid-generation, seen
   on gemini-3.8-flash) is retried like a 5xx. Discarded attempts count toward cost. If
   the last retry still fails, the run is recorded invalid with status `error`.

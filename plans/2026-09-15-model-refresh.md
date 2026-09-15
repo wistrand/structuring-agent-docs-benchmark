@@ -75,8 +75,8 @@ A=anthropic/claude-haiku-4.5,anthropic/claude-sonnet-4.6,anthropic/claude-sonnet
 `results*.json` and `results*.jsonl` are gitignored, so the `--out` files below stay local.
 Each `--out` also streams finished runs to a `.runs.jsonl` file, so a stopped command
 keeps its completed runs. `--max-invalid 2` stops a command cleanly (exit code 3) when a
-model passes 2% invalid runs; isolated invalid runs are logged with their reply and
-excluded from honor%.
+model passes 2% invalid runs outside the `absent` placement; isolated invalid runs, and
+all invalid runs in `absent`, are logged with their reply and excluded from honor%.
 
 ### Phase 0: smoke (repeats 1)
 
