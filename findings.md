@@ -1,40 +1,86 @@
 # Benchmark findings
 
-Recorded results from the placement micro-benchmark (see [README.md](README.md) for the
-harness). Each run is a point-in-time snapshot: it depends on the exact models and the
-provider on the day. Treat runs as immutable; on a rerun, append a new dated section
-rather than overwriting an old one. Durable takeaways are separated from the numbers,
-because the takeaways outlast any single model lineup.
+## At a glance
+
+**The skill.** [structuring-agent-docs](https://github.com/wistrand/structuring-agent-docs)
+tells a coding agent how to lay out a project's docs: a short `CLAUDE.md` that the agent
+reads every session, linking to topic files in `agent_docs/` that it opens only when a
+task needs them. Two of its rules are the ones worth testing. Facts whose absence would
+silently break an edit belong inside `CLAUDE.md`, not in a linked file. And docs should
+point at the file that defines a value rather than copy the value, which goes stale.
+
+**What the benchmarks do.**
+
+- Placement: one surprising project fact is put inside `CLAUDE.md`, in a linked file, two
+  links away, or nowhere. Each AI model then does a small task that needs the fact, and
+  the benchmark checks whether the answer used it.
+- Authoring: models write docs for a small repository, with and without the skill, and
+  the benchmark checks whether the docs copy settings values or point at their source.
+
+**What they say about the skill.**
+
+- Keeping critical facts in `CLAUDE.md` is right. Some models follow links reliably, but
+  others almost never open a linked file, and a doc author cannot know which model will
+  read the docs.
+- An `@`-import saves nothing: it loads the whole file into every session, costing as
+  much context as writing the text inline.
+- Turning on reasoning does not reliably make up for a model that does not look.
+- The skill works on the authoring side: given it, most models tested pointed at the
+  source in nearly every doc set; without it, most copied the values.
+- Nothing measured argues for changing the skill.
+
+## How this file is kept
+
+Recorded results from the placement and authoring benchmarks (see [README.md](README.md)
+for the harness). Each run is a point-in-time snapshot: it depends on the exact models
+and the provider on the day. Treat runs as immutable; on a rerun, append a new dated
+section rather than overwriting an old one. Durable takeaways are separated from the
+numbers, because the takeaways outlast any single model lineup.
 
 ## Summary
 
-Consuming side (placement benchmark), robust:
+Consuming side (placement benchmark), robust across the 2026-07-01 and 2026-09-15 runs:
 
-- Blast radius holds. A fact factored out of the always-loaded CLAUDE.md is missed unless
-  the harness urges reading, so keep critical, default-overriding facts inline. Even a
-  frontier model misses factored-out facts under a non-urging prompt; weak models never
-  follow links at all.
+- Blast radius holds. Keep critical, default-overriding facts inline. Whether a model
+  opens a linked doc depends on the specific model, not its capability tier: sonnet-5,
+  opus-5, and deepseek-v4-pro followed links even under a non-urging prompt, while
+  gpt-5.6-terra opened a linked doc in 1 of 200 link and chain runs across every prompt
+  and reasoning setting, and weak models (llama-3.1-8b, ministral-8b) almost never follow
+  links (0-15%). An author cannot know which model will read the docs, so inline is the
+  only placement that works for all of them.
 - The `@`-import warning holds. An `@`-import costs the same context as inline and saves
-  nothing, confirmed by the benchmark and by the harness spec (imports load eagerly).
-- Follow-through is governed by the harness's system prompt, not the doc's labels or a
-  per-link hint. Mainstream harnesses urge reading, so link-following is usually fine for
-  capable models; the real risk is weak models and low-cue, default-overriding facts.
+  nothing, confirmed in both runs and by the harness spec (imports load eagerly).
+- For models that follow links conditionally, the harness's system prompt is the dominant
+  lever, not the doc's labels or a per-link hint: sonnet-4.6 and gpt-4o-mini follow links
+  under an eager prompt and mostly stop under a neutral one. Low-cue, default-overriding
+  facts (`centiseconds`) are missed more than cued ones.
+- Reasoning is not a substitute for inline placement. Turning it on helped only
+  gemini-3.8-flash under a neutral prompt, barely changed gpt-5.6-terra, and was
+  irrelevant for models already at ceiling.
 
-Authoring side (authoring2), real but narrower:
+Authoring side (authoring2), real and broader than the first run suggested:
 
 - The skill's drift-resistance discipline (don't copy volatile values; point into source;
-  generate) measurably improves a capable author's docs (sonnet: robust 100% vs baseline
-  fragile 100%) and shows no effect for a mid author (haiku: both mostly hard-copy). The
-  benefit is capability-gated. The meaning axis had a clean control but did not
-  discriminate (a handed-over why is documented by both arms).
+  generate) measurably improves authored docs. Given the skill, sonnet-4.6, sonnet-5,
+  opus-5, gemini-3.8-flash, and deepseek-v4-pro pointed at the schema in every doc set and
+  gpt-5.6-terra in 9 of 10; without it they hand-copied the values in 80-100% of doc sets.
+  The benefit is not simply capability-gated: gemini-3.8-flash and deepseek-v4-pro, priced
+  at or below haiku-4.5, respond fully, while haiku-4.5 responds only partially (50%
+  robust with the skill).
+- The structural classifier cannot tell a short doc that never states the values from a
+  disciplined pointer, so an author with an already terse baseline (qwen3.8-flash) shows
+  no skill effect. The meaning axis had a clean control but did not discriminate in either
+  run (a handed-over why is documented by both arms).
 - The earlier `authoring.js` downstream metric was confounded (a source-derivable fact
   with the source removed); `authoring2.js` is the corrected design.
 
-No result argued for changing the skill; several validate its claims. Recurring caveat:
+No result argued for changing the skill; several validate its claims. Recurring caveats:
 n=2 produced spurious "clean wins" twice that higher n reversed, so trust n>=10 and treat
-small runs as noise. All runs are one provider, one day, a few models, one repo, one-shot
-(so no long-horizon drift). The dated sections below are the chronological record and the
-evidence behind this summary.
+small runs as noise. Every run is one provider on one day, two placement cases, one
+authoring fixture, and one-shot (so no long-horizon drift). A provider safety filter
+refused 8 of 10 opus-5 baseline authoring prompts in the 2026-09-15 run, so that row rests
+on n=2. The dated sections below are the chronological record and the evidence behind
+this summary.
 
 ## Run: 2026-07-01 (OpenRouter)
 
@@ -414,3 +460,275 @@ capable author and shows no measurable effect for a mid author on this fixture. 
 validates the rules where they are followed and does not argue for changing the skill,
 though the weak traction on mid models is consistent with the placement-side salience
 caveat.
+
+## Run: 2026-09-15 placement refresh (OpenRouter)
+
+Phase 1 of [plans/2026-09-15-model-refresh.md](plans/2026-09-15-model-refresh.md). Cases
+`centiseconds` and `id-prefix`, five placements, `--repeats 10` (n=20 per cell),
+temperature 0.7, `--reasoning off`, `--max-tokens 8192`, `--max-invalid 2`. Three of the
+six July configurations: eager prompt with descriptive labels (e:desc), eager prompt
+with blind labels (e:blind), and neutral prompt with blind labels (n:blind). Ten models:
+the four July anchors plus `anthropic/claude-sonnet-5`, `anthropic/claude-opus-5`,
+`openai/gpt-5.6-terra`, `google/gemini-3.8-flash`, `deepseek/deepseek-v4-pro-0813`, and
+`mistralai/ministral-8b-2512`.
+
+Run conditions:
+
+- Reasoning was off for every reasoning-capable model except gemini-3.8-flash, whose
+  reasoning is mandatory; it ran at effort `low`.
+- sonnet-5 and gpt-5.6-terra do not accept `temperature`, so their repeats sampled at
+  the provider default.
+- 3000 runs, 1 invalid (gemini, a whitespace-only reply after 16 reads, excluded), 0
+  usage gaps. 13 gemini completions ended with a provider `error` finish reason and
+  succeeded on retry. Reported cost $4.58.
+- Since July the harness gained reasoning control, invalid-run exclusion, cost capture,
+  usage recovery, and provider-error retries (see
+  [agent_docs/architecture.md](agent_docs/architecture.md)). An earlier attempt at this
+  phase was stopped before per-run streaming existed, and a stopped e:blind attempt was
+  superseded; neither is used here.
+
+### Anchors match July
+
+| model                            | config  | link July | link 2026-09 | chain July | chain 2026-09 |
+|----------------------------------|---------|-----------|--------------|------------|---------------|
+| anthropic/claude-sonnet-4.6      | e:desc  | 75        | 75           | 40         | 50            |
+| anthropic/claude-sonnet-4.6      | e:blind | 75        | 75           | 70         | 55            |
+| anthropic/claude-sonnet-4.6      | n:blind | 20        | 15           | 0          | 0             |
+| anthropic/claude-haiku-4.5       | e:desc  | 70        | 80           | 100        | 100           |
+| anthropic/claude-haiku-4.5       | e:blind | 100       | 95           | 100        | 95            |
+| anthropic/claude-haiku-4.5       | n:blind | 70        | 55           | 60         | 70            |
+| openai/gpt-4o-mini               | e:desc  | 70        | 75           | 55         | 55            |
+| openai/gpt-4o-mini               | e:blind | 100       | 95           | 65         | 55            |
+| openai/gpt-4o-mini               | n:blind | 0         | 0            | 0          | 0             |
+| meta-llama/llama-3.1-8b-instruct | e:desc  | 0         | 15           | 0          | 0             |
+| meta-llama/llama-3.1-8b-instruct | e:blind | 0         | 0            | 0          | 5             |
+| meta-llama/llama-3.1-8b-instruct | n:blind | 0         | 0            | 0          | 0             |
+
+`inline` and `import` honored 100% and `absent` 0% in every cell except two 95% `inline`
+cells (llama e:desc, deepseek e:blind). Every anchor link and chain cell is within 15
+points of July, so the harness changes did not move the anchors and the other models'
+numbers are comparable.
+
+### Follow-through (n=20), honor%
+
+link:
+
+| model                            | e:desc | e:blind | n:blind |
+|----------------------------------|--------|---------|---------|
+| anthropic/claude-sonnet-4.6      | 75     | 75      | 15      |
+| anthropic/claude-haiku-4.5       | 80     | 95      | 55      |
+| openai/gpt-4o-mini               | 75     | 95      | 0       |
+| meta-llama/llama-3.1-8b-instruct | 15     | 0       | 0       |
+| anthropic/claude-sonnet-5        | 100    | 100     | 100     |
+| anthropic/claude-opus-5          | 90     | 100     | 100     |
+| openai/gpt-5.6-terra             | 0      | 0       | 0       |
+| google/gemini-3.8-flash          | 100    | 100     | 80      |
+| deepseek/deepseek-v4-pro-0813    | 90     | 95      | 95      |
+| mistralai/ministral-8b-2512      | 0      | 0       | 0       |
+
+chain:
+
+| model                            | e:desc | e:blind | n:blind |
+|----------------------------------|--------|---------|---------|
+| anthropic/claude-sonnet-4.6      | 50     | 55      | 0       |
+| anthropic/claude-haiku-4.5       | 100    | 95      | 70      |
+| openai/gpt-4o-mini               | 55     | 55      | 0       |
+| meta-llama/llama-3.1-8b-instruct | 0      | 5       | 0       |
+| anthropic/claude-sonnet-5        | 100    | 100     | 100     |
+| anthropic/claude-opus-5          | 100    | 95      | 100     |
+| openai/gpt-5.6-terra             | 0      | 0       | 0       |
+| google/gemini-3.8-flash          | 100    | 90      | 75      |
+| deepseek/deepseek-v4-pro-0813    | 80     | 80      | 75      |
+| mistralai/ministral-8b-2512      | 0      | 0       | 0       |
+
+Reading it:
+
+- The 2026 Anthropic frontier models follow links without urging. sonnet-5 honored 100%
+  on link and chain in all three configurations, opus-5 90-100%, and deepseek-v4-pro
+  75-95% including n:blind. For these models the July result that a frontier model
+  misses factored-out facts under a non-urging prompt does not hold.
+- gpt-5.6-terra never follows a link. Across 120 link and chain runs, and 60 absent
+  runs, it made 0 reads and answered in one turn with the natural default
+  (`scheduleRetry(3000)`, `quarterly-sales`). The eager prompt did not change it. This
+  harness has no native tool calling, so a model that ignores the `READ:` convention
+  looks the same as one that declines to look; either way the fact is missed.
+- The weak floor holds: ministral-8b stayed at 0% like llama-3.1-8b (llama 0-15% link).
+- The system prompt remains the dominant lever for the July-era models: sonnet-4.6 link
+  fell from 75% to 15% and gpt-4o-mini from 75-95% to 0% going from eager to neutral.
+  sonnet-5, opus-5, and deepseek are insensitive to it; gemini drops modestly (link 100
+  to 80, chain 100 to 75).
+- The low-cue case still costs more. Under e:desc, sonnet-4.6 chain was 0% on
+  `centiseconds` and 100% on `id-prefix`; gpt-4o-mini chain was 10% and 100%.
+- One opus-5 e:desc link miss graded the token `antml` (markup on the answer line), so
+  that cell likely understates opus-5 by one run.
+
+### Token side
+
+First-load tokens, mean over the three configurations:
+
+| model                            | inline | import | link | chain | absent |
+|----------------------------------|--------|--------|------|-------|--------|
+| anthropic/claude-sonnet-4.6      | 319    | 335    | 285  | 285   | 259    |
+| anthropic/claude-haiku-4.5       | 318    | 334    | 284  | 284   | 258    |
+| openai/gpt-4o-mini               | 285    | 298    | 255  | 256   | 237    |
+| meta-llama/llama-3.1-8b-instruct | 293    | 305    | 263  | 264   | 245    |
+| anthropic/claude-sonnet-5        | 422    | 448    | 381  | 381   | 346    |
+| anthropic/claude-opus-5          | 422    | 448    | 381  | 381   | 346    |
+| openai/gpt-5.6-terra             | 284    | 297    | 254  | 255   | 236    |
+| google/gemini-3.8-flash          | 297    | 314    | 270  | 269   | 244    |
+| deepseek/deepseek-v4-pro-0813    | 285    | 300    | 256  | 257   | 235    |
+| mistralai/ministral-8b-2512      | 290    | 305    | 258  | 258   | 237    |
+
+Import first-load stayed above inline for every model, and link and chain below both, as
+in July. The `@`-import still costs inline's context and saves nothing.
+
+### Takeaways
+
+- Keep critical, default-overriding facts inline. At least one frontier model
+  (gpt-5.6-terra) and every weak model never open a linked doc, under any prompt.
+- Link follow-through is model-specific rather than tier-specific: sonnet-5, opus-5, and
+  deepseek-v4-pro follow links even unprompted, while gpt-5.6-terra never does.
+  Capability tier alone does not predict it.
+- Caveats: one provider, one day, two cases, n=20 per cell, reasoning off (phase 2 of
+  the plan tests reasoning on), gemini at reasoning `low`, and no temperature control
+  for sonnet-5 and gpt-5.6-terra.
+
+## Run: 2026-09-15 reasoning arm (OpenRouter)
+
+Phase 2 of [plans/2026-09-15-model-refresh.md](plans/2026-09-15-model-refresh.md). Same
+cases and placements as phase 1, `--repeats 10` (n=20 per cell), temperature 0.7,
+`--max-tokens 8192`, `--max-invalid 2`, configurations e:blind and n:blind. The four
+models whose catalog default is reasoning on ran with `--reasoning default`:
+`anthropic/claude-sonnet-5` and `anthropic/claude-opus-5` (default effort high),
+`openai/gpt-5.6-terra` (medium), and `google/gemini-3.8-flash` (medium). Each is compared
+against its own phase 1 row, where reasoning was off (gemini: effort low).
+
+Run conditions:
+
+- 800 runs, 5 invalid, all in gemini-3.8-flash `absent` cells: whitespace-only or empty
+  replies after several reads, one `tool_calls` finish, and one run that emitted 1965
+  `READ:` lines and stopped on `MAX_TOKENS`. They are excluded; `absent` stays 0% for
+  every model.
+- The n:blind command crossed gemini's `--max-invalid 2` limit on its last runs. Every
+  planned run had already completed, so no cell is short.
+- 13 gemini completions ended with a provider `error` finish reason and succeeded on
+  retry. 0 usage gaps. Reported cost $3.24.
+- sonnet-5 and gpt-5.6-terra do not accept `temperature`.
+
+### Reasoning off vs on (n=20), honor%
+
+| model                     | config  | link off | link on | chain off | chain on | reasonTok on |
+|---------------------------|---------|----------|---------|-----------|----------|--------------|
+| anthropic/claude-sonnet-5 | e:blind | 100      | 100     | 100       | 100      | 13 / 12      |
+| anthropic/claude-opus-5   | e:blind | 100      | 100     | 95        | 100      | 15 / 19      |
+| openai/gpt-5.6-terra      | e:blind | 0        | 5       | 0         | 0        | 102 / 70     |
+| google/gemini-3.8-flash   | e:blind | 100      | 95      | 90        | 95       | 156 / 173    |
+| anthropic/claude-sonnet-5 | n:blind | 100      | 100     | 100       | 100      | 4 / 20       |
+| anthropic/claude-opus-5   | n:blind | 100      | 100     | 100       | 100      | 61 / 30      |
+| openai/gpt-5.6-terra      | n:blind | 0        | 0       | 0         | 0        | 117 / 125    |
+| google/gemini-3.8-flash   | n:blind | 80       | 95      | 75        | 90       | 469 / 311    |
+
+`reasonTok on` is the mean reasoning tokens per run with reasoning on, link then chain.
+
+Reading it:
+
+- Reasoning does not make gpt-5.6-terra follow links. With reasoning on it opened a
+  file in 1 of 80 link and chain runs, honoring that one, and otherwise answered with
+  the natural default under both prompts. It spent 70-125 reasoning tokens per run
+  without deciding to read.
+- sonnet-5 and opus-5 were already at or near ceiling with reasoning off and stayed at
+  100%. At their default setting they used 4-61 reasoning tokens per run on this task.
+- gemini-3.8-flash is the only model reasoning helped, and only under the neutral
+  prompt: link rose from 80% to 95% and chain from 75% to 90%, while its reasoning
+  tokens rose to 311-469 per run. Under the eager prompt it was already 90-100%.
+
+### Takeaways
+
+- Reasoning is not a substitute for keeping critical facts inline. It closed part of
+  gemini's gap under a non-urging prompt, did nothing for a model that never looks
+  (gpt-5.6-terra), and was irrelevant for models that already follow links.
+- Caveats: one provider, one day, two cases, n=20 per cell. "Default reasoning" means a
+  different effort per model, and gemini's baseline was effort low because it cannot
+  turn reasoning off.
+
+## Run: 2026-09-15 authoring refresh (OpenRouter)
+
+Phase 3 of [plans/2026-09-15-model-refresh.md](plans/2026-09-15-model-refresh.md).
+`authoring2.js` with eight authors, `--repeats 10` per arm (skill, baseline) plus 10
+source-only controls per author. Consumer `anthropic/claude-sonnet-4.6` with the eager
+prompt. `--reasoning off` for authors and consumer (the gemini author ran at effort
+`low`), `--author-max-tokens 16000`, `--max-tokens 8192`, temperature 0.7 (not accepted
+by sonnet-5 and gpt-5.6-terra). The skill came from the live sibling checkout.
+
+Run conditions:
+
+- 240 units, 0 errors, reported cost $5.99.
+- The provider refused 8 of 10 opus-5 baseline authoring calls: finish `content_filter`,
+  native `refusal`, message "This request triggered restrictions on violative cyber
+  content and was blocked under Anthropic's Usage Policy." The prompt is the benign
+  widgets fixture. The skill arm, which sends the same repository and note plus the
+  skill text, was never refused. The opus-5 baseline row has n=2.
+- The 2026-07-01 runs capped authoring at 2000 output tokens with no truncation check.
+  Here sonnet-5 and opus-5 exceeded that in most units, and the July authors in some
+  (haiku-4.5 2 of 10 per arm, sonnet-4.6 skill 4 of 10), so some July doc sets were
+  likely cut short.
+
+### Structural axis (n=10 per arm), robust% / fragile%
+
+| author                        | skill ttlSec | skill maxWidgets | base ttlSec | base maxWidgets | skill doc tokens | base doc tokens | skill n | base n |
+|-------------------------------|--------------|------------------|-------------|-----------------|------------------|-----------------|---------|--------|
+| anthropic/claude-haiku-4.5    | 50 / 50      | 50 / 50          | 30 / 70     | 10 / 90         | 1716             | 1675            | 10      | 10     |
+| anthropic/claude-sonnet-4.6   | 100 / 0      | 100 / 0          | 0 / 100     | 0 / 100         | 1970             | 1480            | 10      | 10     |
+| anthropic/claude-sonnet-5     | 100 / 0      | 100 / 0          | 0 / 100     | 0 / 100         | 2357             | 3751            | 10      | 10     |
+| anthropic/claude-opus-5       | 100 / 0      | 100 / 0          | 0 / 100     | 0 / 100         | 4209             | 4166            | 10      | 2      |
+| openai/gpt-5.6-terra          | 90 / 10      | 90 / 10          | 20 / 80     | 20 / 80         | 1299             | 1436            | 10      | 10     |
+| google/gemini-3.8-flash       | 100 / 0      | 100 / 0          | 10 / 90     | 10 / 90         | 1127             | 756             | 10      | 10     |
+| deepseek/deepseek-v4-pro-0813 | 100 / 0      | 100 / 0          | 0 / 100     | 0 / 100         | 1241             | 1433            | 10      | 10     |
+| qwen/qwen3.8-flash            | 80 / 20      | 70 / 30          | 90 / 10     | 90 / 10         | 1320             | 544             | 10      | 10     |
+
+`omitted` was 0% in every cell. `doc tokens` is the mean authored output per valid unit.
+
+### Meaning axis, honor%
+
+| author                        | control | skill | baseline |
+|-------------------------------|---------|-------|----------|
+| anthropic/claude-haiku-4.5    | 0       | 90    | 100      |
+| anthropic/claude-sonnet-4.6   | 0       | 90    | 70       |
+| anthropic/claude-sonnet-5     | 0       | 70    | 70       |
+| anthropic/claude-opus-5       | 0       | 100   | 100      |
+| openai/gpt-5.6-terra          | 0       | 70    | 100      |
+| google/gemini-3.8-flash       | 0       | 90    | 100      |
+| deepseek/deepseek-v4-pro-0813 | 0       | 90    | 100      |
+| qwen/qwen3.8-flash            | 0       | 90    | 90       |
+
+Reading it:
+
+- The skill's drift-resistance benefit holds and reaches beyond one vendor. With the
+  skill, sonnet-4.6, sonnet-5, opus-5, gemini-3.8-flash, and deepseek-v4-pro pointed at
+  the schema instead of copying the values in every doc set, and gpt-5.6-terra did in 9
+  of 10. Without it, the same authors hand-copied the values in 80-100% of doc sets
+  (opus-5 baseline on n=2).
+- Anchors: sonnet-4.6 reproduces July exactly (skill robust 100%, baseline fragile
+  100%). haiku-4.5 skill robust rose from about 20% in July to 50%, with its baseline
+  still mostly fragile (70-90%). At n=10 that gap is within sampling noise, and July's
+  cap cut some haiku doc sets short, so it is not evidence of a change.
+- The July reading that the benefit is capability-gated needs narrowing. gemini-3.8-flash
+  and deepseek-v4-pro, both far cheaper than sonnet, respond as fully as the frontier
+  authors, while haiku-4.5 responds only partially.
+- qwen3.8-flash shows no skill effect because its baseline is already robust (90%): it
+  writes one short CLAUDE.md that names `config/settings.schema.json` without stating
+  the values. That is robust by brevity rather than discipline, which the classifier
+  cannot distinguish. With the skill it writes longer docs and copies a value more
+  often (robust 70-80%).
+- Meaning still does not discriminate: control is 0% for every author and both arms
+  score 70-100%, because the why is handed to both arms.
+
+### Takeaways
+
+- Given the skill, most capable authors, across vendors and price points, stop
+  hand-copying volatile values into docs. This validates the don't-copy and
+  point-into-source rules and does not argue for changing the skill.
+- A provider safety filter can refuse a benign doc-authoring prompt (opus-5 baseline, 8
+  of 10). Record refusals per arm; an arm dominated by refusals cannot be compared.
+- Caveats: one fixture repository, two structural facts, one consumer, n=10 per arm (n=2
+  for opus-5 baseline), one-shot, and no long-horizon drift.

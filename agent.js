@@ -45,8 +45,28 @@ function findFile(files, path) {
   return null;
 }
 
+// A turn that left no usable text is a harness artifact, not a placement miss: an
+// exhausted token budget (often spent on hidden reasoning) or a provider filter.
+// Callers exclude invalid runs from honor denominators and report them separately.
+// answerLine: an ANSWER: line means the turn delivered, even if cut off after it. Pass
+// false for free-form output (authoring), where a length stop always means truncation.
+function statusOf(text, finishReason, { answerLine = true } = {}) {
+  const delivered = answerLine && /^\s*ANSWER:/im.test(text);
+  // A refusal often has empty content, so check the filter before emptiness.
+  if (finishReason === 'content_filter' && !delivered) return 'filtered';
+  // A provider generation error that survived chat's retries: partial text is not graded.
+  if (finishReason === 'error' && !delivered) return 'error';
+  if (!text.trim()) return 'empty';
+  if (finishReason === 'length' && !delivered) return 'truncated';
+  return 'ok';
+}
+
+function isInvalid(status) {
+  return status === 'empty' || status === 'truncated' || status === 'filtered' || status === 'error';
+}
+
 async function runAgent(model, variant, question, opts = {}) {
-  const { temperature = 0.7, maxTurns = 4, system = SYSTEM_EAGER } = opts;
+  const { temperature = 0.7, maxTurns = 4, system = SYSTEM_EAGER, maxTokens, reasoning = null } = opts;
   const messages = [
     { role: 'system', content: system },
     { role: 'user', content: `CLAUDE.md:\n\n${variant.alwaysLoaded}\n\nTask:\n${question}` },
@@ -57,12 +77,33 @@ async function runAgent(model, variant, question, opts = {}) {
   let firstPrompt = 0;
   const reads = [];
   let finalText = '';
+  let reasoningTokens = 0;
+  let cost = 0;
+  let finishReason = null;
+  // Turns whose usage was lost (sums incomplete) or recovered from generation stats.
+  let usageGaps = 0;
+  let usageRecovered = 0;
+  // Final-turn diagnostics, kept so an invalid run can be explained without a rerun.
+  let nativeFinishReason = null;
+  let refusal = null;
+  let turns = 0;
+  let providerRetries = 0;
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    const { text, usage } = await chat(model, messages, { temperature });
+    const res = await chat(model, messages, { temperature, maxTokens, reasoning });
+    const { text, usage } = res;
     prompt += usage.prompt_tokens || 0;
     completion += usage.completion_tokens || 0;
-    if (turn === 0) firstPrompt = usage.prompt_tokens || 0;
+    reasoningTokens += usage.reasoning_tokens || 0;
+    cost += usage.cost || 0;
+    finishReason = res.finishReason;
+    nativeFinishReason = res.nativeFinishReason || null;
+    refusal = res.refusal || null;
+    turns++;
+    providerRetries += res.providerRetries || 0;
+    if (usage.source === 'missing') usageGaps++;
+    if (usage.source === 'generation') usageRecovered++;
+    if (turn === 0) firstPrompt = usage.source === 'missing' ? null : usage.prompt_tokens || 0;
     messages.push({ role: 'assistant', content: text });
     finalText = text;
 
@@ -85,7 +126,18 @@ async function runAgent(model, variant, question, opts = {}) {
     break;
   }
 
-  return { finalText, reads, tokens: { prompt, completion, firstPrompt } };
+  return {
+    finalText,
+    reads,
+    status: statusOf(finalText, finishReason),
+    finishReason,
+    nativeFinishReason,
+    refusal,
+    turns,
+    providerRetries,
+    tokens: { prompt, completion, firstPrompt, reasoning: reasoningTokens, usageGaps, usageRecovered },
+    cost,
+  };
 }
 
-module.exports = { runAgent, systemFor, SYSTEM_EAGER, SYSTEM_NEUTRAL };
+module.exports = { runAgent, systemFor, statusOf, isInvalid, SYSTEM_EAGER, SYSTEM_NEUTRAL };

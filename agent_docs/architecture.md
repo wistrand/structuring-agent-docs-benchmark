@@ -9,10 +9,11 @@ detail only.
 ## Placement benchmark data flow
 
 ```
-run.js  --cases/--models/--link-hint/--repeats
+run.js  --cases/--models/--link-hint/--repeats/--reasoning
+  -> modelSettings(models, catalog)  openrouter.js   -> per-model reasoning object + notes
   -> placements(case, linkHint)      placements.js   -> 5 variants { alwaysLoaded, files }
-  -> runAgent(model, variant, task)  agent.js        -> multi-turn READ:/ANSWER: loop
-       -> chat(model, messages)      openrouter.js   -> OpenRouter completion + usage
+  -> runAgent(model, variant, task)  agent.js        -> multi-turn READ:/ANSWER: loop, status
+       -> chat(model, messages)      openrouter.js   -> completion, usage, cost, finish reason
   -> case.grade(finalText)           cases.js        -> { honored, note }
   -> aggregate per (model, placement), print table, optional --out JSON
 ```
@@ -36,6 +37,51 @@ Whether the model bothers to `READ` a linked file **is** the follow-through the 
 blast-radius argument is about; the harness does not force reads. `findFile` normalizes
 paths (strips backticks/quotes/trailing punctuation) so a model's cosmetic variations
 still resolve.
+
+## Reasoning, token budget, and invalid runs
+
+Reasoning models spend hidden tokens against the same completion budget as the visible
+reply, so a tight budget yields an empty or cut-off answer that grades like a miss.
+Three pieces keep that artifact out of the honor numbers:
+
+- `resolveReasoning` / `modelSettings` in `openrouter.js` turn `--reasoning` into a
+  per-model `reasoning` request object from the catalog's `reasoning` metadata
+  (`mandatory`, `supported_efforts`). `off` sends `effort: "none"` where that level is
+  listed, `enabled: false` otherwise, and the lowest listed effort where reasoning is
+  mandatory, because effort `none` on a mandatory model is a 400. `default` sends
+  nothing. The resolved settings print in the run header and land in `--out`.
+- `chat` returns `finishReason` and a `usage` carrying `reasoning_tokens` and
+  OpenRouter's reported `cost`. A 200 response with an error body is thrown, so 429/5xx
+  still retry. A response with zero prompt tokens has lost its usage (seen on
+  gemini-3.8-flash); `fetchGenerationUsage` recovers it from `GET /api/v1/generation`,
+  retrying while the record lags, and `usage.source` records `response`, `generation`,
+  or `missing`. `runAgent` counts `usageGaps`, and `run.js` leaves gap runs out of the
+  token means so a false zero never lowers first-load tokens.
+- `chat` retries a completion whose `finishReason` is `error` (a provider failure
+  mid-generation, such as gemini's `MALFORMED_FUNCTION_CALL`) with the 5xx backoff,
+  adds discarded attempts to `cost`, and reports `providerRetries`. After the last
+  retry it returns the response rather than throwing, so the run is recorded invalid
+  instead of printing an error line that stops a watched run.
+- `statusOf` in `agent.js` labels the final turn `filtered`, `error` (provider error
+  before `ANSWER:`), `empty`, `truncated` (length stop before `ANSWER:`), or `ok`, and
+  `isInvalid` marks all but `ok`.
+  `run.js` counts invalid runs per cell and excludes them from honor%. `authoring2.js`
+  applies the check to the authoring call with `answerLine: false` (any length stop
+  truncates a doc set), skips the consumer for an invalid author, and excludes invalid
+  consumer and control runs from meaning honor%. An invalid author keeps a `detail`
+  record (`finishReason`, `nativeFinishReason`, `refusal`, reply head) in `--out`.
+  `statusOf` checks `content_filter` before emptiness, since a refusal often has no
+  content.
+
+Output survives a stop. `--out` streams each finished run, and each error, as a JSON
+line to a `.runs.jsonl` file beside it; the sorted JSON is written at the end. Each
+invalid run prints a `?` line with `status`, `finishReason`, `nativeFinishReason`,
+`turns`, and the reply head, and its record keeps a `detail`. `--max-invalid` sets
+`abortReason` once a model passes its share of invalid runs: workers stop taking tasks,
+in-flight runs finish, outputs are written, and the exit code is 3.
+
+Reasoning settings are per model, identical across that model's placements, so the
+placement invariant (variants differ only in where the fact lives) is unaffected.
 
 ## The five placements (`placements.js`)
 

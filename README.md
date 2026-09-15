@@ -4,6 +4,9 @@ Measures the skill's central, contested claim: a fact factored out of the
 always-loaded `CLAUDE.md` into a linked file is missed more often than the same fact
 kept inline, and an `@`-import costs the same context as inline while saving nothing.
 
+Results: [findings.md](findings.md) records every run and opens with a summary of what
+the runs have shown.
+
 This is repo tooling, not part of the skill. The published zip ships only `SKILL.md`,
 `references/`, and `templates/`; this directory is never bundled. It is dependency-free
 Node (built-in `fetch`, Node 18+).
@@ -26,7 +29,7 @@ The same fact and task run under five placements:
 The model runs as a small agent: CLAUDE.md is always in context, and it opens linked
 files by writing `READ: <path>`, which the harness answers. Honoring the fact is graded
 automatically. Each cell reports honor rate, mean prompt tokens, and first-load tokens
-(the always-on cost).
+(the always-on cost), plus invalid runs, reasoning tokens, and reported cost.
 
 If the skill's claims hold, the shape should be:
 
@@ -42,10 +45,10 @@ If the skill's claims hold, the shape should be:
 ## Run
 
     # inspect exactly what each model would see, no API calls, no key:
-    node benchmark/run.js --dry-run
+    node run.js --dry-run
 
     # real run against OpenRouter:
-    OPENROUTER_API_KEY=sk-... node benchmark/run.js \
+    OPENROUTER_API_KEY=sk-... node run.js \
       --models anthropic/claude-haiku-4.5,openai/gpt-4o-mini \
       --repeats 5 --out results.json
 
@@ -60,9 +63,14 @@ claim, pair a weak and a strong model, for example
 `meta-llama/llama-3.1-8b-instruct,openai/gpt-4o-mini`.
 
 Flags: `--models`, `--repeats` (default 5), `--temperature` (default 0.7, use 0 for
-determinism), `--cases` (subset by id), `--link-hint` (see below), `--concurrency`
-(default 6), `--out` (raw JSON), `--verbose`/`-v` (per-run detail as it runs),
-`--dry-run`.
+determinism), `--cases` (subset by id), `--link-hint` (see below), `--system`,
+`--reasoning`, `--max-tokens` and `--max-invalid` (see "Reasoning models and invalid
+runs"), `--concurrency` (default 6), `--out` (raw JSON), `--verbose`/`-v` (per-run
+detail as it runs), `--dry-run`.
+
+`--out results-x.json` also streams one JSON line per finished run, and per error, to
+`results-x.runs.jsonl` after a header line, so a run stopped partway keeps what it
+completed. The sorted JSON is written when the run ends.
 
 `--link-hint eager|neutral|blind` sets how discoverable a factored-out fact is, which
 is the lever that actually tests the retrieval claim:
@@ -102,6 +110,44 @@ the `--out` JSON (raw records are sorted back into deterministic order before wr
 only per-run `ms` latency varies. The final table adds a `reads` column, near 0 for
 `inline`/`import`/`absent` and about 1 for `link`, 2 for `chain`, a direct read on
 whether the model followed the links.
+
+## Reasoning models and invalid runs
+
+Most catalog models reason by default, and hidden reasoning tokens count against the
+completion budget. A budget spent on reasoning leaves an empty or cut-off reply, which
+would otherwise grade as a miss and pass for a placement effect.
+
+- `--reasoning default|off|low|medium|high` sets reasoning for the run. `default` sends
+  no reasoning parameter, so each model runs at its own default. The other modes
+  resolve per model from the catalog's `reasoning` metadata: `off` disables reasoning
+  where the model allows it and falls back to its lowest effort where reasoning is
+  mandatory, and an unsupported effort maps to the nearest supported one. The run
+  header prints what each model actually runs with.
+- `--max-tokens` (default 8192) is the per-turn completion budget.
+- A run whose final reply is empty, or stopped on length or a content filter before an
+  `ANSWER:` line, is reported `invalid` and kept out of the honor denominator. A
+  nonzero `invalid` count means raise `--max-tokens` or lower `--reasoning` and rerun
+  that model. Each invalid run prints a `?` line with its status, finish reasons, turn
+  count, and the head of the reply. `--max-invalid PCT` stops the run cleanly once any
+  model's invalid runs exceed PCT% of its planned runs: no new runs start, in-flight
+  runs finish, outputs are written, and the exit code is 3.
+- A completion whose finish reason is `error` (a provider failure mid-generation, seen
+  on gemini-3.8-flash) is retried like a 5xx. Discarded attempts count toward cost. If
+  the last retry still fails, the run is recorded invalid with status `error`.
+- Models whose catalog entry does not list `temperature` are flagged in the header.
+  OpenRouter ignores unsupported parameters, so their repeats sample at the provider
+  default; say so when recording the run.
+- Each run records OpenRouter's reported cost and reasoning tokens. The table adds
+  `reasonTok` and `cost$` columns, the run ends with a total, and `--out` stores the
+  resolved per-model `settings` next to the raw records.
+- A provider sometimes omits usage on a turn. The client then recovers tokens and cost
+  from OpenRouter's generation stats endpoint. A run whose usage cannot be recovered
+  stays in honor% but is left out of the token means, and the run summary counts it.
+
+The 2026-07-01 runs sent no reasoning parameter under a 512-token cap. For the models
+used in them, `--reasoning off` reproduces that condition.
+
+Dated run plans with lineups, commands, and cost estimates live in [plans/](plans/).
 
 ## Read the results honestly
 
@@ -177,7 +223,19 @@ Run:
     node authoring2.js --dry-run
     OPENROUTER_API_KEY=... node authoring2.js \
       --models anthropic/claude-haiku-4.5,anthropic/claude-sonnet-4.6 \
-      --consume-model anthropic/claude-sonnet-4.6 --repeats 10
+      --consume-model anthropic/claude-sonnet-4.6 --reasoning off --consume-reasoning off --repeats 10
+
+`--reasoning` applies to the authors and `--consume-reasoning` to the consuming agent,
+with the same modes as the placement benchmark. `--author-max-tokens` (default 16000)
+bounds the authored docs; an empty or truncated doc set is reported invalid and skips
+the consumer, since cut-off docs would grade as omitted or fragile. `--max-tokens`
+(default 8192) bounds each consumer turn, and an invalid consumer run is excluded from
+meaning honor%. An invalid author unit stores its finish reason, the provider's native
+finish reason, any refusal text, and the head of the reply, so a refusal can be
+diagnosed from `--out` without a rerun. `--arms baseline --no-control` reruns a single
+arm without the control set, and `--out` streams finished units to a `.runs.jsonl` file.
+The 2026-07-01 authoring runs capped docs at 2000 tokens
+with no truncation check.
 
 Read it as: skill vs baseline on `robust%` (higher is better, points-or-generates) and
 `fragile%` (lower is better, hand-copied literal), and on `meaning honor%` relative to the `control` baseline.

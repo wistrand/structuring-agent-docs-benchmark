@@ -20,11 +20,12 @@ Flat, dependency-free CommonJS (built-in `fetch`, Node 18+). Point-into-source i
 | `agent.js`            | The simulated agent loop: `READ:`/`ANSWER:` over plain completions        | `runAgent`, `systemFor`, `SYSTEM_EAGER`/`SYSTEM_NEUTRAL` |
 | `placements.js`       | Builds the five placement variants of a case                              | `placements`, `PLACEMENT_ORDER`, `baseClaudeMd` |
 | `cases.js`            | The fact cases for the placement benchmark                                | array of `{ id, fact, question, grade }`      |
-| `openrouter.js`       | Minimal OpenRouter client, no deps                                        | `chat`, `fetchModelIds`                       |
+| `openrouter.js`       | Minimal OpenRouter client, no deps; resolves per-model reasoning settings | `chat`, `fetchModels`, `modelSettings`        |
 | `authoring2.js` + `authoring2-cases.js` | Corrected authoring benchmark (structural + meaning). **Prefer this** | `resolveSkillDir`, `authorUnit`, `controlUnit` |
 | `authoring.js` + `authoring-cases.js`   | Original authoring benchmark, kept as the record of a flawed design | — |
 | `README.md`           | Human guide: what it measures, how to read results, every flag            | —                                             |
 | `findings.md`         | Dated results + decision history (the gotchas/findings doc)               | append-only, see Invariants                   |
+| `plans/`              | Dated run plans: lineups, commands, gates, cost estimates                 | not results; those go to `findings.md`        |
 
 How the pieces fit, the five placements, the link-hint/system levers, and the two
 authoring benchmarks' internals: [agent_docs/architecture.md](agent_docs/architecture.md).
@@ -56,6 +57,10 @@ Rules that must stay true. Breaking one silently makes the benchmark measure not
 - **A placement's variants may differ only in *where the fact lives*.** The base
   entry point (`baseClaudeMd`) and the task string stay constant across all five, so
   any outcome difference is attributable to placement alone. See `placements.js:3`.
+- **An invalid run is never graded as a miss.** A reply left empty or cut off by the
+  token budget (often spent on hidden reasoning) is a harness artifact. `isInvalid`
+  (`agent.js`) keeps it out of honor denominators and reports it separately; any added
+  grading path must do the same. See [agent_docs/architecture.md](agent_docs/architecture.md).
 - **`findings.md` runs are immutable.** Each run is a point-in-time snapshot; on a
   rerun append a new dated section, never edit or overwrite an old one. Keep durable
   takeaways separate from the numbers.

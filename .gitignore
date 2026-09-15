@@ -5,6 +5,7 @@ package-lock.json
 # Benchmark output (--out); findings.md is the tracked, curated record
 results.json
 results*.json
+results*.jsonl
 *.out.json
 
 # Local env / secrets (OPENROUTER_API_KEY)
